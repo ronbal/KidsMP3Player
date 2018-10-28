@@ -35,6 +35,7 @@ boolean restartLastTrackOnStart = false;
 float volFade = 1.0;
 int vol = 10;
 int key = -1;
+int Pause = 0;
 unsigned long keyPressTimeMs = 0L;
 unsigned long volumeHandledLastMs = 0L;
 
@@ -355,7 +356,11 @@ Serial.println(nowMs-keyPressTimeMs);
       
      
     } else if (keyCurrent > 70) {
-      player.pause();
+     Serial.print("Pause: ");
+     Serial.println(Pause);
+   PausenHandler();
+        
+    
       
     }
 
@@ -366,6 +371,24 @@ Serial.println(nowMs-keyPressTimeMs);
    
   }
 }
+
+void PausenHandler(){
+  if (Pause < 1){
+    player.pause();
+    Pause = 1;
+    Serial.println("Pause");
+   
+  }
+  else if (Pause >0){
+    player.start();
+    Pause = 0;
+    Serial.println("Play");
+    
+  }
+  delay(1000);
+}
+
+
 
 void loop() {
   nowMs = millis();
