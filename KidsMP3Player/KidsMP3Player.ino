@@ -8,7 +8,7 @@
 #define EEPROM_FOLDER 2
 #define EEPROM_TRACK 4
 
-#define BUTTON_TOLERANCE 25
+#define BUTTON_TOLERANCE 2
 #define LONG_KEY_PRESS_TIME_MS 2000L
 #define VOLUME_CHECK_INTERVAL_MS 200L
 #define PLAY_DELAY_MS 500L
@@ -21,7 +21,7 @@
 
 #define NO_FOLDERS 11
 
-SoftwareSerial softSerial(0, 1); // RX, TX
+SoftwareSerial softSerial(10, 11); // RX, TX
 DFRobotDFPlayerMini player;
 
 enum {
@@ -33,7 +33,7 @@ boolean continuousPlayWithinPlaylist = false;
 boolean restartLastTrackOnStart = false;
 
 float volFade = 1.0;
-int vol = -1;
+int vol = 10;
 int key = -1;
 unsigned long keyPressTimeMs = 0L;
 unsigned long volumeHandledLastMs = 0L;
@@ -53,7 +53,7 @@ int maxTracks[NO_FOLDERS];
 
 void turnOff() {
   volFade = 0.0;
-  player.volume(0);
+  player.volume(5);
   delay(50);
   player.stop();
   delay(50);
@@ -84,6 +84,7 @@ void initDFPlayer(boolean reset = false) {
   player.EQ(DFPLAYER_EQ_NORMAL);
   player.outputDevice(DFPLAYER_DEVICE_SD);
   player.enableDAC();
+ 
 }
 
 void readConfig() {
@@ -150,14 +151,16 @@ int readPlayerCurrentFileNumber(int retries) {
 }
 
 void playOrAdvertise(int fileNo) {
-  int state = readPlayerState(READ_RETRIES);
-  if (state >= 0) {
-    if ((state & 1) == 1) {
-      player.advertise(fileNo);
-    } else {
+  Serial.println("ADVERTISE");
+  Serial.println(player.readState());
+  //int state = player.readState();
+  //if (state >= 0) {
+   // if ((state & 1) == 1) {
       player.playMp3Folder(fileNo);
-    }
-  }
+   // } else {
+    //  player.playMp3Folder(1);
+  //  }
+ // }
 }
 
 void playFolderOrNextInFolder(int folder, boolean loop = true) {
@@ -177,6 +180,10 @@ void playFolderOrNextInFolder(int folder, boolean loop = true) {
       }
     }
   }
+Serial.print("Folder= ");
+Serial.print(curFolder);
+Serial.print(" Track= ");
+Serial.println(curTrack);
 
   startTrackAtMs = millis() + PLAY_DELAY_MS;
 }
@@ -191,11 +198,22 @@ void setup() {
   delay(50);
 
   softSerial.begin(9600);
-
-  player.begin(softSerial, false, false); // disable ACK to work with MH2024K-24SS chips
+Serial.begin(9600);
+  if (!player.begin(softSerial)) {  //Use softwareSerial to communicate with mp3.
+    Serial.println(F("Unable to begin:"));
+    Serial.println(F("1.Please recheck the connection!"));
+    Serial.println(F("2.Please insert the SD card!"));
+    while(true);
+  }
+  Serial.println(F("DFPlayer Mini online."));
+ 
+  
+ // player.begin(softSerial, false, false); // disable ACK to work with MH2024K-24SS chips
 
   initDFPlayer();
-
+  player.playMp3Folder(138); 
+  Serial.println("Fertig");
+  delay(2000);
   for (int i = 0; i < NO_FOLDERS; ++i) {
     maxTracks[i] = readPlayerFileCountsInFolder(i + 1, READ_RETRIES);
   }
@@ -209,6 +227,11 @@ void setup() {
 }
 
 inline void handleSleepTimer() {
+  Serial.print("Sleep Ziel: ");
+  Serial.print(sleepAtMs);
+  Serial.print(" aktuelle Zeit: ");
+  Serial.println(nowMs);
+  
   if (sleepAtMs != 0 && nowMs >= sleepAtMs) {
     volFade = 1.0 - (nowMs - sleepAtMs) / (float) (offAtMs - sleepAtMs);
     if (volFade <= 0.0) {
@@ -227,6 +250,7 @@ inline void handleVolume() {
                       31 - map(volInternal, 1023, 0, 1, 30))) * volFade;
     if (volNew != vol) {
       vol = volNew;
+      vol = 10;
       player.volume(vol);
     }
   }
@@ -235,12 +259,24 @@ inline void handleVolume() {
 inline void handleKeyPress() {
   int keyCurrent = analogRead(PIN_KEY);
 
-  if (keyCurrent > 958 && key > 0) {
+  /* /////////////////////////////////////DEBUGGING TIME /////////////////////////////////
+Serial.print(nowMs);
+Serial.print("-");  
+Serial.print(keyPressTimeMs);
+Serial.print("=");
+Serial.println(nowMs-keyPressTimeMs);
+
+
+*/
+
+
+
+  if (keyCurrent > 60 && key > 0) {
     switch (mode) {
       case MODE_NORMAL:
         if (nowMs - keyPressTimeMs >= LONG_KEY_PRESS_TIME_MS && key == 11) {
           mode = MODE_SET_TIMER;
-          playOrAdvertise(100);
+          playOrAdvertise(1);
           delay(1000);
         } else if (nowMs - keyPressTimeMs >= LONG_KEY_PRESS_TIME_MS && key == 1) {
           continuousPlayWithinPlaylist = !continuousPlayWithinPlaylist;
@@ -282,36 +318,52 @@ inline void handleKeyPress() {
     }
 
     key = -1;
-  } else if (keyCurrent <= 958) {
+  } else if (keyCurrent <= 1024) {
+
     int keyOld = key;
-
+//Serial.println(keyCurrent);
     if (keyCurrent > 933 - BUTTON_TOLERANCE) {
-      key = 11;
-    } else if (keyCurrent > 846 - BUTTON_TOLERANCE) {
-      key = 9;
-    } else if (keyCurrent > 760 - BUTTON_TOLERANCE) {
-      key = 6;
-    } else if (keyCurrent > 676 - BUTTON_TOLERANCE) {
       key = 3;
-    } else if (keyCurrent > 590 - BUTTON_TOLERANCE) {
+      
+    } else if (keyCurrent > 524 - BUTTON_TOLERANCE) {
       key = 2;
-    } else if (keyCurrent > 504 - BUTTON_TOLERANCE) {
-      key = 5;
-    } else if (keyCurrent > 414 - BUTTON_TOLERANCE) {
-      key = 8;
-    } else if (keyCurrent > 321 - BUTTON_TOLERANCE) {
-      key = 10;
-    } else if (keyCurrent > 222 - BUTTON_TOLERANCE) {
-      key = 7;
-    } else if (keyCurrent > 115 - BUTTON_TOLERANCE) {
-      key = 4;
-    } else if (keyCurrent > 0) {
+      
+    } else if (keyCurrent > 362 - BUTTON_TOLERANCE) {
       key = 1;
+     
+      
+    } else if (keyCurrent > 211 - BUTTON_TOLERANCE) {
+      key = 6;
+     
+    } else if (keyCurrent > 186 - BUTTON_TOLERANCE) {
+      key = 5;
+      
+    } else if (keyCurrent > 166 - BUTTON_TOLERANCE) {
+      key = 4;
+      
+    } else if (keyCurrent > 134 - BUTTON_TOLERANCE) {
+      key = 9;
+     
+    } else if (keyCurrent > 126 - BUTTON_TOLERANCE) {
+      key = 8;
+      
+    } else if (keyCurrent > 119 - BUTTON_TOLERANCE) {
+      key = 7;
+      
+    } else if (keyCurrent > 101 - BUTTON_TOLERANCE) {
+      key = 11;
+      
+     
+    } else if (keyCurrent > 70) {
+      player.pause();
+      
     }
 
-    if (keyOld != key) {
+    if (keyOld == key) {
       keyPressTimeMs = nowMs;
+     // Serial.println(keyPressTimeMs);
     }
+   
   }
 }
 
@@ -320,11 +372,14 @@ void loop() {
 
   handleSleepTimer();
   handleVolume();
+  
   handleKeyPress();
+  
 
   if (startTrackAtMs != 0 and nowMs >= startTrackAtMs) {
     startTrackAtMs = 0;
-    player.playFolder(curFolder, curTrack);
+    player.playLargeFolder(curFolder, curTrack);
+  delay(200);
     if (restartLastTrackOnStart) {
       writeTrackInfo(curFolder, curTrack);
     }
@@ -337,8 +392,11 @@ void loop() {
   }
 
   if (player.available()) {
+   
     uint8_t type = player.readType();
     int value = player.read();
+Serial.print("player.read: ");
+Serial.println(value);
 
     if (type == DFPlayerPlayFinished && value == curTrackFileNumber) {
       int16_t oldTrack = curTrack;
@@ -360,5 +418,3 @@ void loop() {
 
   delay(50);
 }
-
-
