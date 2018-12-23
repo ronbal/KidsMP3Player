@@ -3,6 +3,22 @@
 #include <DFRobotDFPlayerMini.h>
 #include <avr/sleep.h>
 #include <avr/eeprom.h>
+#include <Adafruit_NeoPixel.h>
+
+#define PIN            6
+int r =0;
+int g= 0;
+int b=255;
+// How many NeoPixels are attached to the Arduino?
+#define NUMPIXELS      4
+
+
+// When we setup the NeoPixel library, we tell it how many pixels, and which pin to use to send signals.
+// Note that for older NeoPixel strips you might need to change the third parameter--see the strandtest
+// example for more information on possible values.
+Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
+
+int delayval = 5; // delay for half a second
 
 #define EEPROM_CFG 1
 #define EEPROM_FOLDER 2
@@ -12,16 +28,16 @@
 #define LONG_KEY_PRESS_TIME_MS 2000L
 #define VOLUME_CHECK_INTERVAL_MS 200L
 #define PLAY_DELAY_MS 500L
-#define FADE_OUT_MS 3L * 1000L * 60L
+#define FADE_OUT_MS  500L * 60L
 #define READ_RETRIES 3
 
 #define PIN_KEY A3
 #define PIN_VOLUME A2
-#define PIN_VOLUME_INTERNAL A1
+#define PIN_VOLUME_INTERNAL A4
 
 #define NO_FOLDERS 11
 
-SoftwareSerial softSerial(10, 11); // RX, TX
+SoftwareSerial softSerial(9, 11); // RX, TX
 DFRobotDFPlayerMini player;
 
 enum {
@@ -31,14 +47,14 @@ enum {
 boolean loopPlaylist = false;
 boolean continuousPlayWithinPlaylist = false;
 boolean restartLastTrackOnStart = false;
-
+int maxVolume =20;
 float volFade = 1.0;
 int vol = 10;
 int key = -1;
 int Pause = 0;
 unsigned long keyPressTimeMs = 0L;
 unsigned long volumeHandledLastMs = 0L;
-
+float sensorValue = 0;
 unsigned long sleepAtMs = 0L;
 unsigned long offAtMs = 0L;
 
@@ -64,7 +80,8 @@ void turnOff() {
   delay(50);
   player.sleep();
   delay(200);
-
+pixels.clear();
+pixels.show();
   while (1) {
     set_sleep_mode(SLEEP_MODE_PWR_DOWN);
     sleep_mode();
@@ -164,6 +181,50 @@ void playOrAdvertise(int fileNo) {
  // }
 }
 
+void handleleds(){
+
+float sensorOld = sensorValue;
+
+
+
+
+
+ sensorValue = analogRead(A1);
+
+ 
+  // print out the value you read;
+  Serial.print(sensorValue);
+  Serial.print(" ");
+ float sensorVolt = 5 * sensorValue ;
+ sensorVolt =  sensorVolt /1023 ;
+Serial.print("Volt: ");
+Serial.println(sensorVolt); 
+
+sensorValue = map(sensorValue, 695, 860, 1, 4);
+ if (sensorOld != sensorValue){
+pixels.clear();  
+ }
+  Serial.println(sensorValue);
+  delay(1);        // delay in between reads for stability
+  // For a set of NeoPixels the first NeoPixel is 0, second is 1, all the way up to the count of pixels minus one.
+
+  for(int i=0;i<sensorValue;i++){
+
+    // pixels.Color takes RGB values, from 0,0,0 up to 255,255,255
+ 
+    
+    pixels.setPixelColor(i, pixels.Color(r,g,b)); // Moderately bright green color.
+
+    pixels.show(); // This sends the updated pixel color to the hardware.
+
+ //   delay(delayval); // Delay for a period of time (in milliseconds).
+
+  }
+
+  
+}
+
+
 void playFolderOrNextInFolder(int folder, boolean loop = true) {
   startTrackAtMs = 0;
 
@@ -193,7 +254,9 @@ void setup() {
   pinMode(PIN_VOLUME, INPUT);
   pinMode(PIN_VOLUME_INTERNAL, INPUT);
   pinMode(PIN_KEY, INPUT_PULLUP);
-
+pixels.setBrightness(10);
+  pixels.begin(); // This initializes the NeoPixel library.
+   rainbowCycle(1); 
   readConfig();
 
   delay(50);
@@ -212,9 +275,12 @@ Serial.begin(9600);
  // player.begin(softSerial, false, false); // disable ACK to work with MH2024K-24SS chips
 
   initDFPlayer();
-  player.playMp3Folder(138); 
+  handleVolume();
+  player.volume(10);
+  player.playMp3Folder(138);
+    rainbowCycle(1); 
   Serial.println("Fertig");
-  delay(2000);
+
   for (int i = 0; i < NO_FOLDERS; ++i) {
     maxTracks[i] = readPlayerFileCountsInFolder(i + 1, READ_RETRIES);
   }
@@ -234,7 +300,10 @@ inline void handleSleepTimer() {
   Serial.println(nowMs);
   
   if (sleepAtMs != 0 && nowMs >= sleepAtMs) {
+    Serial.println("TIMER ABGELAUFEN");
     volFade = 1.0 - (nowMs - sleepAtMs) / (float) (offAtMs - sleepAtMs);
+    Serial.print("VolFADE: ");
+    Serial.println(volFade);
     if (volFade <= 0.0) {
       turnOff();
     }
@@ -242,24 +311,29 @@ inline void handleSleepTimer() {
 }
 
 inline void handleVolume() {
+ 
   if (nowMs > volumeHandledLastMs + VOLUME_CHECK_INTERVAL_MS) {
     volumeHandledLastMs = nowMs;
 
     int volCurrent = analogRead(PIN_VOLUME);
-    int volInternal = analogRead(PIN_VOLUME_INTERNAL);
-    int volNew = (map(volCurrent, 0, 1023, 1,
-                      31 - map(volInternal, 1023, 0, 1, 30))) * volFade;
+    //int volInternal = analogRead(PIN_VOLUME_INTERNAL);
+   
+    
+    int volNew = (map(volCurrent, 0, 1023, 1,maxVolume));
+    
     if (volNew != vol) {
       vol = volNew;
-      vol = 10;
+      //vol = 10;
       player.volume(vol);
+     
     }
   }
 }
 
 inline void handleKeyPress() {
   int keyCurrent = analogRead(PIN_KEY);
-
+Serial.print("Key Cururent: ");
+Serial.println(keyCurrent);
   /* /////////////////////////////////////DEBUGGING TIME /////////////////////////////////
 Serial.print(nowMs);
 Serial.print("-");  
@@ -272,29 +346,29 @@ Serial.println(nowMs-keyPressTimeMs);
 
 
 
-  if (keyCurrent > 60 && key > 0) {
+  if (keyCurrent > 980 && key > 0) {
     switch (mode) {
       case MODE_NORMAL:
-        if (nowMs - keyPressTimeMs >= LONG_KEY_PRESS_TIME_MS && key == 11) {
+        if (nowMs - keyPressTimeMs >= LONG_KEY_PRESS_TIME_MS && key == 5) {
           mode = MODE_SET_TIMER;
-          playOrAdvertise(1);
+          playOrAdvertise(100);
           delay(1000);
         } else if (nowMs - keyPressTimeMs >= LONG_KEY_PRESS_TIME_MS && key == 1) {
           continuousPlayWithinPlaylist = !continuousPlayWithinPlaylist;
           playOrAdvertise(continuousPlayWithinPlaylist ? 200 : 201);
           writeConfig();
-          delay(1000);
+          delay(500);
         } else if (nowMs - keyPressTimeMs >= LONG_KEY_PRESS_TIME_MS && key == 2) {
           loopPlaylist = !loopPlaylist;
           playOrAdvertise(loopPlaylist ? 300 : 301);
           writeConfig();
-          delay(1000);
+          delay(500);
         } else if (nowMs - keyPressTimeMs >= LONG_KEY_PRESS_TIME_MS && key == 3) {
           restartLastTrackOnStart = !restartLastTrackOnStart;
           playOrAdvertise(restartLastTrackOnStart ? 400 : 401);
           writeConfig();
           writeTrackInfo(curFolder, curTrack);
-          delay(1000);
+          delay(500);
         } else {
           playFolderOrNextInFolder(key);
         }
@@ -319,52 +393,95 @@ Serial.println(nowMs-keyPressTimeMs);
     }
 
     key = -1;
-  } else if (keyCurrent <= 1024) {
+  } else if (keyCurrent <= 980) {
 
     int keyOld = key;
-//Serial.println(keyCurrent);
-    if (keyCurrent > 933 - BUTTON_TOLERANCE) {
-      key = 3;
+Serial.println(keyCurrent);
+    if (keyCurrent > 930 - BUTTON_TOLERANCE) {
+      Serial.println(key);
+      PausenHandler();
+    
+      delay(500);
       
-    } else if (keyCurrent > 524 - BUTTON_TOLERANCE) {
-      key = 2;
-      
-    } else if (keyCurrent > 362 - BUTTON_TOLERANCE) {
-      key = 1;
-     
-      
-    } else if (keyCurrent > 211 - BUTTON_TOLERANCE) {
-      key = 6;
-     
-    } else if (keyCurrent > 186 - BUTTON_TOLERANCE) {
-      key = 5;
-      
-    } else if (keyCurrent > 166 - BUTTON_TOLERANCE) {
-      key = 4;
-      
-    } else if (keyCurrent > 134 - BUTTON_TOLERANCE) {
+    } else if (keyCurrent > 845 - BUTTON_TOLERANCE) {
       key = 9;
-     
-    } else if (keyCurrent > 126 - BUTTON_TOLERANCE) {
+      r=0;
+      g=0;
+      b=255;
+        Serial.println(key);
+      delay(500);
+    } else if (keyCurrent > 760 - BUTTON_TOLERANCE) {
+      key = 6;
+      r=255;
+      g=0;
+      b=0;
+        Serial.println(key);
+     delay(500);
+      
+    } else if (keyCurrent > 670 - BUTTON_TOLERANCE) {
+      key = 3;
+      r=200;
+      g=200;
+      b=200;
+        Serial.println(key);
+     delay(500);
+    } else if (keyCurrent > 590 - BUTTON_TOLERANCE) {
+      key = 2;
+      r=0;
+      g=255;
+      b=0;
+        Serial.println(key);
+      delay(500);
+    } else if (keyCurrent > 500 - BUTTON_TOLERANCE) {
+      key = 5;
+      r=0;
+      g=0;
+      b=255;
+        Serial.println(key);
+      delay(500);
+    } else if (keyCurrent >  400 - BUTTON_TOLERANCE) {
       key = 8;
-      
-    } else if (keyCurrent > 119 - BUTTON_TOLERANCE) {
-      key = 7;
-      
-    } else if (keyCurrent > 101 - BUTTON_TOLERANCE) {
+       r=255;
+      g=255;
+      b=0;
+        Serial.println(key);
+     delay(500);
+    } else if (keyCurrent > 320 - BUTTON_TOLERANCE) {
       key = 11;
-      
-     
-    } else if (keyCurrent > 70) {
+        Serial.println(key);
+      delay(500);
+    } else if (keyCurrent > 230 - BUTTON_TOLERANCE) {
+      key = 7;
+      r=255;
+      g=0;
+      b=0;
+        Serial.println(key);
+      delay(500);
+    } else if (keyCurrent > 120 - BUTTON_TOLERANCE) {
+      key = 4;
+      r=255;
+      g=255;
+      b=0;
+        Serial.println(key);
+      delay(500); 
+     } else if (keyCurrent > 10 - BUTTON_TOLERANCE) {
+      key = 1;
+      r=255;
+      g=255;
+      b=255;
+        Serial.println(key);
+      delay(500);
+   /*  
+    } else if (keyCurrent > 10) {
      Serial.print("Pause: ");
      Serial.println(Pause);
    PausenHandler();
-        
+        */
     
       
     }
 
-    if (keyOld == key) {
+    if (keyOld != key) {
       keyPressTimeMs = nowMs;
      // Serial.println(keyPressTimeMs);
     }
@@ -385,7 +502,7 @@ void PausenHandler(){
     Serial.println("Play");
     
   }
-  delay(1000);
+  delay(100);
 }
 
 
@@ -397,7 +514,7 @@ void loop() {
   handleVolume();
   
   handleKeyPress();
-  
+  handleleds();
 
   if (startTrackAtMs != 0 and nowMs >= startTrackAtMs) {
     startTrackAtMs = 0;
@@ -440,4 +557,35 @@ Serial.println(value);
   }
 
   delay(50);
+}
+
+
+
+void rainbowCycle(uint8_t wait) {
+  uint16_t i, j;
+
+  for(j=0; j<256*5; j++) { // 5 cycles of all colors on wheel
+    for(i=0; i< pixels.numPixels(); i++) {
+      pixels.setPixelColor(i, Wheel(((i * 256 / pixels.numPixels()) + j) & 255));
+    }
+    pixels.show();
+    delay(wait);
+  }
+}
+
+
+
+// Input a value 0 to 255 to get a color value.
+// The colours are a transition r - g - b - back to r.
+uint32_t Wheel(byte WheelPos) {
+  WheelPos = 255 - WheelPos;
+  if(WheelPos < 85) {
+    return pixels.Color(255 - WheelPos * 3, 0, WheelPos * 3);
+  }
+  if(WheelPos < 170) {
+    WheelPos -= 85;
+    return pixels.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+  }
+  WheelPos -= 170;
+  return pixels.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
 }
